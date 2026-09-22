@@ -121,9 +121,20 @@ export function disableGitTerminalPrompt(): void {
  * legitimate slow clones/fetches/rebases in unrelated commands. The env var
  * lets a slow link or a very large team repo raise the ceiling without a new
  * release. Read at call time (not module load) so tests can override it.
+ *
+ * Validates the env var: a non-numeric, negative, or non-finite value falls
+ * back to the default rather than reaching simple-git (which would either
+ * silently disable the timeout or misbehave).
  */
 export function initPushBlockTimeoutMs(): number {
-  return Number.parseInt(process.env.TEAMAI_INIT_PUSH_TIMEOUT_MS ?? '', 10) || 30_000;
+  const raw = process.env.TEAMAI_INIT_PUSH_TIMEOUT_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 30_000;
 }
 
 /**
@@ -613,12 +624,8 @@ export async function autoPushViaMR(
   message: string,
   files: string[],
   teamConfig: { repo: string; provider?: string; reviewers?: string[] },
-<<<<<<< HEAD
   localConfig: { repo: { remote: string; localPath: string }; username: string; provider?: string },
-=======
-  localConfig: { repo: { remote: string; localPath: string }; username: string },
   opts: { initPush?: boolean } = {},
->>>>>>> a8ecefc (fix(init): scope git timeout to init pushes + real credential guard)
 ): Promise<string | null> {
   try {
     const branchName = generateBranchName(localConfig.username);
@@ -631,6 +638,7 @@ export async function autoPushViaMR(
     const { createPrWithFallback } = await import('../push.js');
     const prUrl = await createPrWithFallback(
       teamConfig, localConfig, branchName, message, message,
+      opts.initPush ? { spawnTimeoutMs: initPushBlockTimeoutMs() } : {},
     );
 
     await checkoutMaster(repoPath);
